@@ -145,6 +145,16 @@ class AternosClient {
         await this._navigateToServer(targetServerName);
         await this._handlePopups();
 
+        // Check if it's already online
+        const currentStatus = await this.page.evaluate(() => {
+            const statusEl = document.querySelector('.statuslabel-label');
+            return statusEl ? statusEl.innerText.trim().toLowerCase() : '';
+        });
+
+        if (currentStatus === 'online') {
+            return { success: true, status: 'online', alreadyOnline: true };
+        }
+
         try {
             await this.page.waitForFunction(() => {
                 const btn = document.querySelector('#start');
@@ -208,6 +218,16 @@ class AternosClient {
         if (!this.page) await this.init();
         await this._navigateToServer(targetServerName);
         await this._handlePopups();
+
+        // Check if it's already offline
+        const currentStatus = await this.page.evaluate(() => {
+            const statusEl = document.querySelector('.statuslabel-label');
+            return statusEl ? statusEl.innerText.trim().toLowerCase() : '';
+        });
+
+        if (currentStatus === 'offline') {
+            return { success: true, status: 'offline', alreadyOffline: true };
+        }
 
         try {
             await this.page.waitForFunction(() => {
