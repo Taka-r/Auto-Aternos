@@ -1,0 +1,15 @@
+{
+  "name": "aternos-fetch",
+  "version": "1.0.0",
+  "description": "Aternos server start automation",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "puppeteer": "^22.11.2",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  }
+}

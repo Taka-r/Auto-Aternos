@@ -1,0 +1,7 @@
+node_modules/
+.env
+user_data/
+*.log
+aternoslog*.txt
+debug_*.png
+page.html
