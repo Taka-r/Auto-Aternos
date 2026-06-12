@@ -32,14 +32,18 @@ class AternosClient {
      * Launch browser and authenticate
      */
     async init() {
-        this.browser = await puppeteer.launch({
-            headless: this.headless,
-            userDataDir: this.userDataDir,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1280,800']
-        });
-        this.page = await this.browser.newPage();
-        await this.page.setViewport({ width: 1280, height: 800 });
-        await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36');
+        if (!this.browser) {
+            this.browser = await puppeteer.launch({
+                headless: this.headless,
+                userDataDir: this.userDataDir,
+                args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1280,800', '--disable-notifications']
+            });
+        }
+        if (!this.page) {
+            this.page = await this.browser.newPage();
+            await this.page.setViewport({ width: 1280, height: 800 });
+            await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36');
+        }
         
         await this._login();
     }
@@ -104,7 +108,11 @@ class AternosClient {
         try {
             const closed = await this.page.evaluate(() => {
                 const btns = Array.from(document.querySelectorAll('button, .btn'));
-                const noBtn = btns.find(b => b.innerText && b.innerText.trim().toLowerCase() === 'no');
+                const noBtn = btns.find(b => {
+                    if (!b.innerText) return false;
+                    const txt = b.innerText.trim().toLowerCase();
+                    return txt === 'no' || txt === 'cancel' || txt === 'deny' || txt === 'no thanks' || txt === 'not now';
+                });
                 if (noBtn && noBtn.style.display !== 'none' && noBtn.style.visibility !== 'hidden') {
                     noBtn.click();
                     return true;
@@ -139,8 +147,10 @@ class AternosClient {
      * Starts the specified server
      * @param {string} [targetServerName] - The name of the server to start. Leave blank to pick the first one.
      * @param {Function} [progressCallback] - Callback function to receive status updates like "starting", "loading"
+     * @param {number} [retryCount=0] - Internal use to limit ad-avoidance retries
      */
-    async startServer(targetServerName = null, progressCallback = null) {
+    async startServer(targetServerName = null, progressCallback = null, retryCount = 0) {
+        if (retryCount > 10) throw new Error("Too many retries to avoid ads.");
         if (!this.page) await this.init();
         await this._navigateToServer(targetServerName);
         await this._handlePopups();
@@ -186,8 +196,43 @@ class AternosClient {
                             conf.click();
                             return true;
                         }
+                        
+                        // Reject notification prompt
+                        const denyBtn = btns.find(b => {
+                            if (!b.innerText) return false;
+                            const txt = b.innerText.trim().toLowerCase();
+                            return txt === 'cancel' || txt === 'deny' || txt === 'no' || txt === 'not now' || txt === 'no thanks';
+                        });
+                        if (denyBtn && denyBtn.style.display !== 'none' && denyBtn.style.visibility !== 'hidden') {
+                            denyBtn.click();
+                            return true;
+                        }
+
                         return false;
                     });
+                } catch(e) {}
+
+                try {
+                    const adPromptDetected = await this.page.evaluate(() => {
+                        const btns = Array.from(document.querySelectorAll('button, .btn, a'));
+                        const hasWatchBtn = btns.some(b => {
+                            const t = (b.innerText || '').toLowerCase();
+                            return t.includes('watch') && (t.includes('video') || t.includes('ad'));
+                        });
+                        const text = document.body.innerText.toLowerCase();
+                        const hasAdText = text.includes('watch a short video') || 
+                                          text.includes('watch an ad') || 
+                                          text.includes('watch video to start') ||
+                                          text.includes('watch this short advertisement');
+                        return hasWatchBtn || hasAdText;
+                    });
+
+                    if (adPromptDetected) {
+                        if (progressCallback) progressCallback('ad_detected_restarting');
+                        await this.page.close();
+                        this.page = null;
+                        return await this.startServer(targetServerName, progressCallback, retryCount + 1);
+                    }
                 } catch(e) {}
 
                 const statusText = await this.page.evaluate(() => {
